@@ -1,13 +1,10 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from uuid import uuid4
 import time
 import jwt
-import yaml
-import os
-from dotenv import load_dotenv
 
 
 app = FastAPI()
@@ -44,19 +41,20 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(MetricsMiddleware)
 
 
+
 # =====================================================
-# QUESTION 1 - STATS
+# 1. STATS ENDPOINT
 # =====================================================
 
 @app.get("/stats")
-def stats(values: str):
+def stats(values: str = Query(...)):
 
     numbers = [int(x.strip()) for x in values.split(",")]
 
     total = sum(numbers)
 
     return {
-        "email": "25ds1000094@ds.study.iitm.ac.in",
+        "email": "25ds1000094@ds.study.iitm.ac.inm",
         "count": len(numbers),
         "sum": total,
         "min": min(numbers),
@@ -65,8 +63,9 @@ def stats(values: str):
     }
 
 
+
 # =====================================================
-# QUESTION 2 - JWT VERIFY
+# 2. JWT VERIFY ENDPOINT
 # =====================================================
 
 ISSUER = "https://idp.exam.local"
@@ -93,7 +92,6 @@ async def verify(data: dict):
     token = data.get("token")
 
     try:
-
         payload = jwt.decode(
             token,
             PUBLIC_KEY,
@@ -117,10 +115,10 @@ async def verify(data: dict):
         )
 
 
-# =====================================================
-# QUESTION 3 - CONFIG PRECEDENCE
-# =====================================================
 
+# =====================================================
+# 3. EFFECTIVE CONFIG ENDPOINT
+# =====================================================
 
 DEFAULTS = {
     "port": 8000,
@@ -131,16 +129,7 @@ DEFAULTS = {
 }
 
 
-YAML_CONFIG = {
-    "port": 8522,
-    "workers": 15,
-    "debug": False,
-    "log_level": "warning",
-    "api_key": "key-zijl9ts246"
-}
-
-
-def str_to_bool(value):
+def to_bool(value):
     return str(value).lower() in [
         "true",
         "1",
@@ -157,47 +146,103 @@ def effective_config(
     config = DEFAULTS.copy()
 
     # YAML layer
-    config.update(YAML_CONFIG)
-
+    config.update({
+        "port": 8522,
+        "workers": 15,
+        "debug": False,
+        "log_level": "warning",
+        "api_key": "key-zijl9ts246"
+    })
 
     # .env layer
-    dotenv_values = {
-        "workers": "9",
-        "debug": "true",
+    config.update({
+        "workers": 9,
+        "debug": True,
         "log_level": "error"
-    }
-
-    config.update(dotenv_values)
-
+    })
 
     # OS environment layer
-    os_values = {
-        "port": "8768",
-        "debug": "false"
-    }
-
-    config.update(os_values)
-
+    config.update({
+        "port": 8768,
+        "debug": False
+    })
 
     # CLI overrides
     if set:
-
         for item in set:
-
             key, value = item.split("=", 1)
             config[key] = value
 
 
-    # Type conversion
-
     config["port"] = int(config["port"])
     config["workers"] = int(config["workers"])
-    config["debug"] = str_to_bool(config["debug"])
+    config["debug"] = to_bool(config["debug"])
 
-    config["log_level"] = str(config["log_level"])
-
-    # Secret masking
     config["api_key"] = "****"
 
-
     return config
+
+
+
+# =====================================================
+# 4. ANALYTICS ENDPOINT
+# =====================================================
+
+ANALYTICS_KEY = "ak_kybbo2ltoru8t6wz0marsjic"
+
+
+@app.post("/analytics")
+async def analytics(
+    data: dict,
+    x_api_key: str = Header(default=None)
+):
+
+    if x_api_key != ANALYTICS_KEY:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Unauthorized"}
+        )
+
+
+    events = data.get("events", [])
+
+    total_events = len(events)
+
+    users = set()
+
+    revenue = 0
+
+    user_totals = {}
+
+
+    for event in events:
+
+        user = event.get("user")
+        amount = event.get("amount", 0)
+
+        users.add(user)
+
+
+        if amount > 0:
+
+            revenue += amount
+
+            if user not in user_totals:
+                user_totals[user] = 0
+
+            user_totals[user] += amount
+
+
+    top_user = max(
+        user_totals,
+        key=user_totals.get
+    )
+
+
+    return {
+        "email": "YOUR_EMAIL@example.com",
+        "total_events": total_events,
+        "unique_users": len(users),
+        "revenue": revenue,
+        "top_user": top_user
+    }
