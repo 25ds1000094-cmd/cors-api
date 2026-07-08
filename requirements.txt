@@ -1,6 +1,3 @@
 fastapi
 uvicorn
-PyJWT
-cryptography
-pyyaml
-python-dotenv
+prometheus-client
