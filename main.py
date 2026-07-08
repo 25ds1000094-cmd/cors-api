@@ -57,41 +57,50 @@ def extract_invoice(text: str) -> InvoiceResponse:
         currency = currency_match.group(1).upper()
 
 
-    # --------------------
+     # --------------------
     # Amount extraction
     # --------------------
     amount = 0.0
     candidates = []
 
-    amount_patterns = [
-        # USD 3850.83
-        r'\b(?:USD|EUR|GBP)\s*([0-9]{1,6}(?:\.[0-9]{1,2})?)',
+    # Highest priority: values near total/due/balance keywords
+    priority_patterns = [
+        r'(?:total\s*(?:amount|due|payable)?|amount\s*due|balance\s*due|grand\s*total|invoice\s*total)'
+        r'\s*[:\-]?\s*(?:USD|EUR|GBP|\$|€|£)?\s*([0-9]{1,6}(?:\.[0-9]{1,2})?)',
 
-        # $3850.83 / €3850.83 / £3850.83
-        r'[$€£]\s*([0-9]{1,6}(?:\.[0-9]{1,2})?)',
+        r'(?:USD|EUR|GBP)\s*([0-9]{1,6}(?:\.[0-9]{1,2})?)',
 
-        # 3850.83
-        r'\b([0-9]{2,6}\.[0-9]{1,2})\b',
-
-        # whole number amounts
-        r'\b([0-9]{2,6})\b'
+        r'[$€£]\s*([0-9]{1,6}(?:\.[0-9]{1,2})?)'
     ]
 
-    for pattern in amount_patterns:
-        for match in re.findall(pattern, text, re.I):
+    for pattern in priority_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
             try:
                 value = float(match)
-
-                # Grader range
                 if 50 <= value <= 9050:
                     candidates.append(value)
-
-            except Exception:
+            except:
                 pass
 
+    # If keyword extraction worked, use it
     if candidates:
-        # Invoice total is usually the largest monetary number
-        amount = max(candidates)
+        amount = candidates[0]
+
+    else:
+        # Fallback: decimal numbers only
+        fallback = re.findall(
+            r'\b([0-9]{2,6}\.[0-9]{1,2})\b',
+            text
+        )
+
+        for item in fallback:
+            value = float(item)
+            if 50 <= value <= 9050:
+                candidates.append(value)
+
+        if candidates:
+            amount = candidates[0]
 
 
     # --------------------
