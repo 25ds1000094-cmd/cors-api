@@ -5,28 +5,28 @@ from fastapi.responses import JSONResponse
 from uuid import uuid4
 import time
 import jwt
+import yaml
+import os
+from dotenv import load_dotenv
 
 
 app = FastAPI()
 
 
 # -------------------------
-# CORS CONFIGURATION
+# CORS
 # -------------------------
-
-ALLOWED_ORIGIN = "https://dash-7pz3pg.example.com"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[ALLOWED_ORIGIN],
-    allow_credentials=False,
-    allow_methods=["GET"],
+    allow_origins=["*"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 # -------------------------
-# REQUIRED RESPONSE HEADERS
+# REQUIRED HEADERS
 # -------------------------
 
 class MetricsMiddleware(BaseHTTPMiddleware):
@@ -35,10 +35,8 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        duration = time.perf_counter() - start
-
         response.headers["X-Request-ID"] = str(uuid4())
-        response.headers["X-Process-Time"] = f"{duration:.6f}"
+        response.headers["X-Process-Time"] = f"{time.perf_counter()-start:.6f}"
 
         return response
 
@@ -46,12 +44,12 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 app.add_middleware(MetricsMiddleware)
 
 
-# -------------------------
-# STATS ENDPOINT
-# -------------------------
+# =====================================================
+# QUESTION 1 - STATS
+# =====================================================
 
 @app.get("/stats")
-def stats(values: str = Query(...)):
+def stats(values: str):
 
     numbers = [int(x.strip()) for x in values.split(",")]
 
@@ -67,9 +65,9 @@ def stats(values: str = Query(...)):
     }
 
 
-# -------------------------
-# JWT VERIFICATION CONFIG
-# -------------------------
+# =====================================================
+# QUESTION 2 - JWT VERIFY
+# =====================================================
 
 ISSUER = "https://idp.exam.local"
 
@@ -89,22 +87,13 @@ dQIDAQAB
 """
 
 
-# -------------------------
-# TOKEN VERIFICATION
-# -------------------------
-
 @app.post("/verify")
 async def verify(data: dict):
 
     token = data.get("token")
 
-    if not token:
-        return JSONResponse(
-            status_code=401,
-            content={"valid": False}
-        )
-
     try:
+
         payload = jwt.decode(
             token,
             PUBLIC_KEY,
@@ -121,7 +110,94 @@ async def verify(data: dict):
         }
 
     except Exception:
+
         return JSONResponse(
             status_code=401,
             content={"valid": False}
         )
+
+
+# =====================================================
+# QUESTION 3 - CONFIG PRECEDENCE
+# =====================================================
+
+
+DEFAULTS = {
+    "port": 8000,
+    "workers": 1,
+    "debug": False,
+    "log_level": "info",
+    "api_key": "default-secret-000"
+}
+
+
+YAML_CONFIG = {
+    "port": 8522,
+    "workers": 15,
+    "debug": False,
+    "log_level": "warning",
+    "api_key": "key-zijl9ts246"
+}
+
+
+def str_to_bool(value):
+    return str(value).lower() in [
+        "true",
+        "1",
+        "yes",
+        "on"
+    ]
+
+
+@app.get("/effective-config")
+def effective_config(
+    set: list[str] | None = Query(default=None)
+):
+
+    config = DEFAULTS.copy()
+
+    # YAML layer
+    config.update(YAML_CONFIG)
+
+
+    # .env layer
+    dotenv_values = {
+        "workers": "9",
+        "debug": "true",
+        "log_level": "error"
+    }
+
+    config.update(dotenv_values)
+
+
+    # OS environment layer
+    os_values = {
+        "port": "8768",
+        "debug": "false"
+    }
+
+    config.update(os_values)
+
+
+    # CLI overrides
+    if set:
+
+        for item in set:
+
+            key, value = item.split("=", 1)
+            config[key] = value
+
+
+    # Type conversion
+
+    config["port"] = int(config["port"])
+    config["workers"] = int(config["workers"])
+    config["debug"] = str_to_bool(config["debug"])
+
+    config["log_level"] = str(config["log_level"])
+
+    # Secret masking
+    config["api_key"] = "****"
+
+
+    return config
