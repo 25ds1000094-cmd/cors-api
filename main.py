@@ -240,7 +240,7 @@ async def analytics(
 
 
     return {
-        "email": "YOUR_EMAIL@example.com",
+        "email": "25ds1000094@ds.study.iitm.ac.in",
         "total_events": total_events,
         "unique_users": len(users),
         "revenue": revenue,
