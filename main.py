@@ -48,7 +48,7 @@ def stats(
     count = len(numbers)
 
     return {
-        "email": "26t2_cs2008-announce@study.iitm.ac.in",
+        "email": "25ds1000094@ds.study.iitm.ac.in",
         "count": count,
         "sum": total,
         "min": min(numbers),
