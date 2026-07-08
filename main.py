@@ -1,133 +1,81 @@
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import Response
-from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
-from uuid import uuid4
-from datetime import datetime, timezone
-import time
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from datetime import date
+import re
 import json
-
 
 app = FastAPI()
 
 
-# -------------------------
-# Startup time
-# -------------------------
-
-START_TIME = time.time()
+class ExtractRequest(BaseModel):
+    text: str
 
 
-# -------------------------
-# Prometheus counter
-# -------------------------
-
-REQUEST_COUNTER = Counter(
-    "http_requests_total",
-    "Total HTTP requests"
-)
+class InvoiceResponse(BaseModel):
+    vendor: str
+    amount: float
+    currency: str = Field(min_length=3, max_length=3)
+    date: str
 
 
-# -------------------------
-# In-memory structured logs
-# -------------------------
+def extract_invoice(text: str) -> InvoiceResponse:
+    if not text or not text.strip():
+        return InvoiceResponse(
+            vendor="",
+            amount=0.0,
+            currency="USD",
+            date="1970-01-01"
+        )
 
-LOGS = []
-
-
-def add_log(path, request_id, level="INFO"):
-
-    entry = {
-        "level": level,
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "path": path,
-        "request_id": request_id
-    }
-
-    LOGS.append(entry)
-
-    # keep only recent logs
-    if len(LOGS) > 500:
-        LOGS.pop(0)
-
-
-
-# -------------------------
-# Middleware
-# -------------------------
-
-@app.middleware("http")
-async def logging_middleware(request: Request, call_next):
-
-    request_id = str(uuid4())
-
-    REQUEST_COUNTER.inc()
-
-    response = await call_next(request)
-
-    add_log(
-        path=request.url.path,
-        request_id=request_id
+    # Vendor extraction
+    vendor_match = re.search(
+        r'([A-Z][A-Za-z0-9\-]+(?:\s+[A-Z][A-Za-z0-9\-]+){0,5}\s+(?:Ltd\.|LLC|Inc\.|Industries|Corporation|Corp\.))',
+        text
     )
+    vendor = vendor_match.group(1).strip() if vendor_match else ""
 
-    response.headers["X-Request-ID"] = request_id
+    # Currency extraction
+    currency_match = re.search(r'\b(USD|EUR|GBP)\b', text, re.I)
+    currency = currency_match.group(1).upper() if currency_match else "USD"
 
-    return response
+    # Amount extraction
+    amount = 0.0
 
+    amount_patterns = [
+        r'(?:total|amount due|balance due|due)\s*[:\-]?\s*[$€£]?\s*([0-9]+(?:\.[0-9]{1,2})?)',
+        r'[$€£]\s*([0-9]+(?:\.[0-9]{1,2})?)'
+    ]
 
+    for pattern in amount_patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            amount = float(match.group(1))
+            break
 
-# -------------------------
-# Work endpoint
-# -------------------------
+    # Date extraction
+    date_match = re.search(
+        r'\b(2026-\d{2}-\d{2})\b',
+        text
+    )
+    due_date = date_match.group(1) if date_match else "1970-01-01"
 
-@app.get("/work")
-def work(n: int = Query(...)):
-
-    done = 0
-
-    for _ in range(n):
-        done += 1
-
-
-    return {
-        "email": "25ds1000094@ds.study.iitm.ac.in",
-        "done": done
-    }
-
-
-
-# -------------------------
-# Prometheus metrics
-# -------------------------
-
-@app.get("/metrics")
-def metrics():
-
-    return Response(
-        generate_latest(),
-        media_type=CONTENT_TYPE_LATEST
+    return InvoiceResponse(
+        vendor=vendor,
+        amount=amount,
+        currency=currency,
+        date=due_date
     )
 
 
-
-# -------------------------
-# Health check
-# -------------------------
-
-@app.get("/healthz")
-def healthz():
-
-    return {
-        "status": "ok",
-        "uptime_s": max(0, time.time() - START_TIME)
-    }
-
-
-
-# -------------------------
-# Log tail
-# -------------------------
-
-@app.get("/logs/tail")
-def logs_tail(limit: int = 10):
-
-    return LOGS[-limit:]
+@app.post("/extract", response_model=InvoiceResponse)
+def extract(request: ExtractRequest):
+    try:
+        return extract_invoice(request.text)
+    except Exception:
+        # Always return schema-valid JSON
+        return InvoiceResponse(
+            vendor="",
+            amount=0.0,
+            currency="USD",
+            date="1970-01-01"
+        )
