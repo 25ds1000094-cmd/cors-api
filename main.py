@@ -54,7 +54,7 @@ def stats(values: str = Query(...)):
     total = sum(numbers)
 
     return {
-        "email": "25ds1000094@ds.study.iitm.ac.inm",
+        "email": "25ds1000094@ds.study.iitm.ac.in",
         "count": len(numbers),
         "sum": total,
         "min": min(numbers),
